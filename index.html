@@ -269,6 +269,27 @@ function sortMembersByTeam(list){
     return a.n.localeCompare(b.n,"zh-Hant");
   });
 }
+/** 遠端 config/members 與內建 DEFAULT 依 id 合併：程式更新後新增的成員（例如新 id）會補上，不會被舊雲端整包覆蓋而消失。 */
+function mergeMembersWithDefaults(custom,defs){
+  if(!Array.isArray(custom)||custom.length===0)return sortMembersByTeam([...defs]);
+  const defIds=new Set(defs.map(m=>m.id));
+  const byId=new Map();
+  for(const c of custom){
+    const id=typeof c.id==="number"?c.id:Number(c.id);
+    if(!Number.isFinite(id))continue;
+    byId.set(id,{...c,id});
+  }
+  const merged=defs.map(def=>{
+    const c=byId.get(def.id);
+    return c?{...def,...c,id:def.id}:def;
+  });
+  for(const c of custom){
+    const id=typeof c.id==="number"?c.id:Number(c.id);
+    if(!Number.isFinite(id)||defIds.has(id))continue;
+    merged.push({...c,id});
+  }
+  return sortMembersByTeam(merged);
+}
 const LEAGUES=["CPBL","PLG","TPBL"];
 const NF={"K":"🇰🇷","J":"🇯🇵","T":"🇹🇼"};
 const RS={隊長:{bg:"#FFF3E0",tc:"#BF360C"},外援:{bg:"#FCE4EC",tc:"#880E4F"},正式:{bg:"#E3F2FD",tc:"#0D47A1"},練習生:{bg:"#F1F8E9",tc:"#1B5E20"},總監:{bg:"#FFF8E1",tc:"#F57F17"}};
@@ -555,7 +576,8 @@ function App(){
   useEffect(()=>{
     db.ref("config/members").once("value").then(snap=>{
       const custom=snap.val();
-      if(custom&&Array.isArray(custom)&&custom.length>0) setMembers(sortMembersByTeam(custom));
+      if(custom&&Array.isArray(custom)&&custom.length>0)
+        setMembers(mergeMembersWithDefaults(custom,DEFAULT_MEMBERS));
     }).catch(()=>{});
 
     try{
