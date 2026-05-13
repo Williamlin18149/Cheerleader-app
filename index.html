@@ -147,6 +147,61 @@ label.lbl{display:block;font-size:11px;font-weight:600;color:#666;margin-bottom:
   .form-row{grid-template-columns:1fr}
   .filters{gap:5px}
 }
+/* ── 平板／電腦：加寬主區、放大字級與卡片格線 ── */
+@media(min-width:768px){
+  #app{max-width:1040px;padding:1.25rem 1.5rem}
+  .header{padding:1rem 1.35rem;border-radius:16px;margin-bottom:1rem}
+  .h-info h2{font-size:17px}
+  .h-info p{font-size:12px}
+  .hbtn{padding:6px 12px;font-size:12px}
+  .room-tag{font-size:12px;padding:4px 11px}
+  .tabs{margin-bottom:.9rem}
+  .tab{padding:9px 18px;font-size:14px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:10px}
+  .card{padding:11px;border-radius:13px}
+  .nat,.cn{font-size:14px}
+  .filters select,.filters input[type=search]{font-size:13px;padding:6px 10px}
+  .tog{font-size:13px;padding:6px 11px}
+  .count{font-size:13px}
+  .og{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+  .mg{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .section-title{font-size:14px}
+  .liker-legend{font-size:12px;padding:11px 13px}
+  .join-box{max-width:420px}
+}
+@media(min-width:1100px){
+  #app{max-width:1320px;padding:1.5rem 2.25rem}
+  .header{padding:1.05rem 1.6rem}
+  .h-info h2{font-size:19px}
+  .h-info p{font-size:13px}
+  .hbtn{padding:7px 14px;font-size:13px}
+  .tab{padding:10px 22px;font-size:15px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:12px}
+  .card{padding:13px;border-radius:14px}
+  .nat,.cn{font-size:15px}
+  .rb{font-size:11px;padding:3px 8px}
+  .tp{font-size:10px;padding:3px 7px}
+  .filters{gap:9px;margin-bottom:.75rem}
+  .filters select,.filters input[type=search]{font-size:14px;padding:7px 11px}
+  .tog{font-size:14px;padding:7px 13px}
+  .count{font-size:14px;margin-bottom:.75rem}
+  .og{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+  .mg{grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .mc{padding:1rem}
+  .mc h4{font-size:14px}
+  .section-title{font-size:15px;margin:1rem 0 .5rem}
+  .liker-legend{font-size:13px;padding:12px 16px}
+  .liker-pill{font-size:11px;padding:4px 10px}
+  .modal-sheet{max-width:520px;padding:1.35rem 1.5rem calc(1.35rem + env(safe-area-inset-bottom))}
+  .admin-header{padding:1rem 1.5rem}
+  .admin-header h2{font-size:18px}
+  .members-table th,.members-table td{font-size:13px;padding:10px 14px}
+  .btn{font-size:13px;padding:7px 16px}
+  .btn-sm{font-size:12px;padding:5px 12px}
+  .join-box{max-width:460px}
+  .join-box h1{font-size:22px}
+  .pw-box{max-width:400px;padding:2rem}
+}
 </style>
 </head>
 <body>
@@ -345,6 +400,18 @@ const e=React.createElement;
 const san=s=>s.trim().replace(/[\s/\\'"]/g,"_").slice(0,25)||"user";
 const EMPTY_FORM={n:"",nat:"T",t:[],r:"正式",note:""};
 
+/** 成員所屬球隊 id（Firebase 可能存成數字，統一成字串以利 TEAMS 比對） */
+function memberTeamIds(m){
+  if(!m||!Array.isArray(m.t))return[];
+  return m.t.map(id=>String(id)).filter(Boolean);
+}
+/** 依目前聯盟篩選要顯示的球隊標籤（選定聯盟時不顯示其他聯盟隊名，避免誤解篩選錯誤） */
+function memberTeamIdsForBrowseTags(m,league){
+  const ids=memberTeamIds(m);
+  if(league==="all")return ids;
+  return ids.filter(id=>TEAMS[id]&&TEAMS[id].l===league);
+}
+
 function App(){
   /* ── 一般狀態 ── */
   const [phase,setPhase]=useState("loading");
@@ -541,11 +608,12 @@ function App(){
 
   const filtered=useMemo(()=>{
     let list=members.filter(m=>{
-      if(multi&&m.t.length<2)return false;
+      const tids=memberTeamIds(m);
+      if(multi&&(m.t||[]).length<2)return false;
       if(q&&!m.n.toLowerCase().includes(q.toLowerCase()))return false;
       if(nf!=="all"&&m.nat!==nf)return false;
-      if(lf!=="all"&&!m.t.some(id=>TEAMS[id]?.l===lf))return false;
-      if(tf!=="all"&&!m.t.includes(tf))return false;
+      if(lf!=="all"&&!tids.some(id=>TEAMS[id]&&TEAMS[id].l===lf))return false;
+      if(tf!=="all"&&!tids.includes(String(tf)))return false;
       return true;
     });
     if(browseFriendFilter!=="all"){
@@ -814,11 +882,12 @@ function App(){
       e("div",{className:"grid"},
         filtered.map(m=>{
           const likers=whoLikes(m.id);const isMine=myFaves.includes(m.id);const rs=RS[m.r]||RS["正式"];
+          const tagTids=memberTeamIdsForBrowseTags(m,lf);
           return e("div",{key:m.id,className:`card${isMine?" mine":""}`,onClick:()=>toggleFave(m.id)},
             e("div",{className:"ct"},e("span",{className:"nat"},NF[m.nat]),e("span",{className:"cn"},m.n),
               m.t.length>1&&e("span",{className:"mb"},m.t.length>2?"三棲":"雙棲")),
             e("div",null,e("span",{className:"rb",style:{background:rs.bg,color:rs.tc}},m.r)),
-            e("div",{className:"tr"},m.t.map(tid=>{const tm=TEAMS[tid];return tm&&e("span",{key:tid,className:"tp",style:{background:tm.bg,color:tm.tc}},tm.n);})),
+            e("div",{className:"tr"},tagTids.map(tid=>{const tm=TEAMS[tid];return tm&&e("span",{key:tid,className:"tp",style:{background:tm.bg,color:tm.tc}},tm.n);})),
             m.note&&e("div",{className:"note"},m.note),
             likers.length>0&&e("div",{className:"liker-pills",onClick:ev=>ev.stopPropagation()},
               likers.map(nm=>e("span",{key:nm,className:"liker-pill"},
