@@ -442,6 +442,8 @@ function App(){
   const [adminErr,setAdminErr]=useState("");
   const [allRooms,setAllRooms]=useState({});
   const [roomsLoading,setRoomsLoading]=useState(false);
+  /** 房間列表僅能顯示部分時的說明（例如 RTDB 規則不允許讀取 /rooms 根節點） */
+  const [adminRoomsNotice,setAdminRoomsNotice]=useState("");
   /* ── 啦啦隊編輯器 ── */
   const [medQ,setMedQ]=useState("");
   const [medTf,setMedTf]=useState("all");
@@ -530,11 +532,41 @@ function App(){
     else{setAdminErr("密碼錯誤");}
   };
 
-  /* ── 管理員：載入所有房間 ── */
+  /* ── 管理員：載入所有房間 ──
+     若規則僅允許讀 rooms/{房號}/members（無法讀整棵 rooms），改讀目前所在房間的 members。 */
+  const loadRoomMembersAsRooms=async(code)=>{
+    const snap=await db.ref(`rooms/${code}/members`).once("value");
+    return{[code]:{members:snap.val()||{}}};
+  };
   const loadAllRooms=async()=>{
     setRoomsLoading(true);
-    try{const snap=await db.ref("rooms").once("value");setAllRooms(snap.val()||{});}
-    catch(e){}
+    setAdminRoomsNotice("");
+    try{
+      const snap=await db.ref("rooms").once("value");
+      let rooms=snap.val();
+      if(!rooms||typeof rooms!=="object"||Array.isArray(rooms))rooms={};
+      let keys=Object.keys(rooms);
+      if(keys.length===0&&roomCode){
+        rooms=await loadRoomMembersAsRooms(roomCode);
+        keys=Object.keys(rooms);
+        if(keys.length)setAdminRoomsNotice("無法從根節點讀取房間清單（可能為資料庫權限），以下僅顯示您目前所在房間。");
+      }
+      setAllRooms(rooms);
+    }catch(err){
+      const msg=err&&err.message?String(err.message):String(err);
+      if(roomCode){
+        try{
+          setAllRooms(await loadRoomMembersAsRooms(roomCode));
+          setAdminRoomsNotice(`無法讀取全部房間（${msg}）。以下僅顯示您目前所在房間；若需管理其他房間，請在 Firebase 即時資料庫規則開放對「rooms」的讀取權限，或由有權限的後台操作。`);
+        }catch(e2){
+          setAllRooms({});
+          setAdminRoomsNotice(`無法載入房間資料：${msg}`);
+        }
+      }else{
+        setAllRooms({});
+        setAdminRoomsNotice(`無法載入房間資料：${msg}（請先從首頁進入某一房間後再開管理後台，即可至少管理該房。）`);
+      }
+    }
     setRoomsLoading(false);
   };
 
@@ -705,6 +737,7 @@ function App(){
 
       /* ── 房間管理 ── */
       adminSection==="rooms"&&e("div",null,
+        adminRoomsNotice&&e("div",{className:"alert warn",style:{marginBottom:10}},adminRoomsNotice),
         e("div",{style:{display:"flex",gap:8,marginBottom:10}},
           e("button",{className:"btn btn-blue",onClick:loadAllRooms},"🔄 重新整理"),
           e("span",{style:{fontSize:12,color:"#aaa",alignSelf:"center"}},`共 ${Object.keys(allRooms).length} 個房間`)
