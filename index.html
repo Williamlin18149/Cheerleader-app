@@ -772,10 +772,28 @@ function App(){
     loadAllRooms();
   };
 
-  /* ── 管理員：清空整個房間 ── */
-  const clearRoom=async(room)=>{
+  /* ── 管理員：清空整個房間 ──
+     需 Firebase 規則允許寫入 rooms/{房號}（整棵刪除）；若僅允許寫 members 下節點，會改為先刪各成員再刪 members。 */
+  const clearRoom=async room=>{
     if(!confirm(`確定清空「${room}」整個房間？所有人將被刪除。`))return;
-    await db.ref(`rooms/${room}`).remove();
+    const base=`rooms/${room}`;
+    const errMsg=e=>{
+      const m=e&&e.message?String(e.message):String(e);
+      alert(`清空房間失敗：${m}\n\n請在即時資料庫規則開放寫入，例如：\n"rooms" → "$roomId" → ".write": true\n（或至少允許刪除 rooms/$roomId/members/$memberName）`);
+    };
+    try{
+      await db.ref(base).remove();
+    }catch(e1){
+      try{
+        const snap=await db.ref(`${base}/members`).once("value");
+        const names=Object.keys(snap.val()||{});
+        await Promise.all(names.map(nm=>db.ref(`${base}/members/${nm}`).remove()));
+        await db.ref(`${base}/members`).remove();
+        await db.ref(base).remove();
+      }catch(e2){
+        errMsg(e2);
+      }
+    }
     loadAllRooms();
   };
 
