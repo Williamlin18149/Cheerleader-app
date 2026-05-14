@@ -292,7 +292,7 @@ function mergeMembersWithDefaults(custom,defs){
   return sortMembersByTeam(merged);
 }
 const LEAGUES=["CPBL","PLG","TPBL"];
-const NF={"K":"🇰🇷","J":"🇯🇵","T":"🇹🇼"};
+const NF={"K":"🇰🇷","J":"🇯🇵","H":"🇭🇰","T":"🇹🇼"};
 const RS={隊長:{bg:"#FFF3E0",tc:"#BF360C"},外援:{bg:"#FCE4EC",tc:"#880E4F"},正式:{bg:"#E3F2FD",tc:"#0D47A1"},練習生:{bg:"#F1F8E9",tc:"#1B5E20"},總監:{bg:"#FFF8E1",tc:"#F57F17"}};
 const FC=["#E53935","#1E88E5","#43A047","#FB8C00","#8E24AA","#00ACC1","#D81B60","#6D4C41","#546E7A","#E91E63"];
 const SESSION_KEY="cheer_session_v2";
@@ -420,7 +420,7 @@ const DEFAULT_MEMBERS=[
   {id:87,n:"莎莎",nat:"T",t:["brothers","ctbc"],r:"正式"},
   {id:166,n:"維尼",nat:"T",t:["brothers","ctbc"],r:"正式"},
   {id:167,n:"璇璇",nat:"T",t:["brothers","ctbc"],r:"正式"},
-  {id:168,n:"小迪",nat:"T",t:["brothers","ctbc"],r:"正式",note:"香港"},
+  {id:168,n:"小迪",nat:"H",t:["brothers","ctbc"],r:"正式",note:"香港"},
   /* ── 樂天 Rakuten Girls ── */
   {id:67,n:"廉世彬",nat:"K",t:["rakuten"],r:"外援"},
   {id:68,n:"禹洙漢",nat:"K",t:["rakuten"],r:"外援"},
@@ -530,6 +530,7 @@ const DEFAULT_MEMBERS=[
   {id:252,n:"曾甜",nat:"T",t:["dreamers"],r:"正式"},
   {id:253,n:"禧妹",nat:"T",t:["dreamers"],r:"正式"},
   {id:254,n:"莉卡",nat:"T",t:["dreamers"],r:"正式"},
+  {id:287,n:"三上悠亞",nat:"J",t:["dreamers"],r:"外援"},
   /* ── TPBL：攻城獅 Muse Girls ── */
   {id:98,n:"李藝斌",nat:"K",t:["lioneers"],r:"外援",note:"年度人氣#3"},
   {id:99,n:"鄭熙靜",nat:"K",t:["lioneers"],r:"外援"},
@@ -616,6 +617,10 @@ function App(){
   const [nf,setNf]=useState("all");
   const [multi,setMulti]=useState(false);
   const [browseFriendFilter,setBrowseFriendFilter]=useState("all");
+  /** 共同支持：哪些房間暱稱要計入（預設全勾；可取消勾選以排除某人） */
+  const [overlapRoomPick,setOverlapRoomPick]=useState({});
+  /** 共同支持列表：everyone=勾選成員「全員都有選」交集；anyone=「任一人有選」聯集 */
+  const [overlapListMode,setOverlapListMode]=useState("everyone");
   const [roomMemberDetail,setRoomMemberDetail]=useState(null);
   const [q,setQ]=useState("");
   const [joinErr,setJoinErr]=useState("");
@@ -703,7 +708,7 @@ function App(){
     localStorage.removeItem(SESSION_KEY);
     if(dbRef.current)dbRef.current.off();
     setPhase("join");setMyName("");setRoomCode("");setMyFaves([]);setRoomData({});setRestored(false);
-    setBrowseFriendFilter("all");setRoomMemberDetail(null);
+    setBrowseFriendFilter("all");setRoomMemberDetail(null);setOverlapListMode("everyone");
   };
 
   /* ── 動作：切換喜愛 ── */
@@ -845,6 +850,14 @@ function App(){
   const memberNames=Object.keys(roomData);
   const colorMap=useMemo(()=>{const m={};memberNames.forEach((nm,i)=>{m[nm]=FC[i%FC.length];});return m;},[memberNames.join(",")]);
 
+  useEffect(()=>{
+    setOverlapRoomPick(prev=>{
+      const next={};
+      memberNames.forEach(nm=>next[nm]=prev[nm]===undefined?!0:!!prev[nm]);
+      return next;
+    });
+  },[memberNames.join(",")]);
+
   const filtered=useMemo(()=>{
     let list=members.filter(m=>{
       const tids=memberTeamIds(m);
@@ -862,14 +875,50 @@ function App(){
     return list;
   },[members,lf,tf,nf,multi,q,browseFriendFilter,roomData]);
 
-  const overlapMembers=useMemo(()=>{
-    const counts={};const who={};
-    Object.entries(roomData).forEach(([nm,d])=>{
-      (d.faves||[]).forEach(id=>{counts[id]=(counts[id]||0)+1;if(!who[id])who[id]=[];who[id].push(nm);});
+  const overlapFiltered=useMemo(()=>{
+    const activeNicks=memberNames.filter(nm=>overlapRoomPick[nm]!==false);
+    const n=activeNicks.length;
+    if(n===0)return [];
+    const asId=raw=>{
+      const id=typeof raw==="number"?raw:Number(raw);
+      return Number.isFinite(id)?id:null;
+    };
+    const likersOrdered=[...activeNicks].sort((a,b)=>a.localeCompare(b,"zh-Hant"));
+    let rows;
+    if(overlapListMode==="anyone"){
+      const counts={};const who={};
+      activeNicks.forEach(nm=>{
+        (roomData[nm]?.faves||[]).forEach(raw=>{
+          const id=asId(raw);
+          if(id==null)return;
+          counts[id]=(counts[id]||0)+1;
+          if(!who[id])who[id]=[];
+          if(!who[id].includes(nm))who[id].push(nm);
+        });
+      });
+      rows=Object.entries(counts)
+        .map(([sid,cnt])=>({m:members.find(x=>x.id===+sid),cnt,likers:(who[+sid]||[]).slice().sort((a,b)=>a.localeCompare(b,"zh-Hant"))}))
+        .filter(x=>x.m)
+        .sort((a,b)=>b.cnt-a.cnt||a.m.n.localeCompare(b.m.n,"zh-Hant"));
+    }else{
+      const sets=activeNicks.map(nm=>new Set((roomData[nm]?.faves||[]).map(asId).filter(x=>x!=null)));
+      const first=sets[0],rest=sets.slice(1);
+      const ids=[];
+      for(const id of first){
+        if(rest.every(s=>s.has(id)))ids.push(id);
+      }
+      rows=ids.map(id=>({m:members.find(x=>x.id===id),cnt:n,likers:likersOrdered})).filter(x=>x.m)
+        .sort((a,b)=>a.m.n.localeCompare(b.m.n,"zh-Hant"));
+    }
+    rows=rows.filter(({m})=>{
+      const tids=memberTeamIds(m);
+      if(nf!=="all"&&m.nat!==nf)return false;
+      if(lf!=="all"&&!tids.some(id=>TEAMS[id]&&TEAMS[id].l===lf))return false;
+      if(tf!=="all"&&!tids.includes(String(tf)))return false;
+      return true;
     });
-    return Object.entries(counts).filter(([,c])=>c>1).sort((a,b)=>b[1]-a[1])
-      .map(([id,cnt])=>({m:members.find(x=>x.id===+id),cnt,likers:who[+id]||[]})).filter(x=>x.m);
-  },[roomData,members]);
+    return rows;
+  },[roomData,members,memberNames,overlapRoomPick,overlapListMode,lf,tf,nf]);
 
   const whoLikes=id=>Object.entries(roomData).filter(([,d])=>(d.faves||[]).includes(id)).map(([nm])=>nm);
   const teamsByLf=Object.entries(TEAMS).filter(([,v])=>lf==="all"||v.l===lf);
@@ -991,7 +1040,7 @@ function App(){
           ),
           e("label",{className:"lbl"},"國籍 *"),
           e("div",{className:"nat-btns"},
-            [["T","🇹🇼 本土"],["K","🇰🇷 韓籍"],["J","🇯🇵 日籍"]].map(([v,l])=>
+            [["T","🇹🇼 本土"],["H","🇭🇰 港澳"],["K","🇰🇷 韓籍"],["J","🇯🇵 日籍"]].map(([v,l])=>
               e("button",{key:v,className:`nat-btn${form.nat===v?" on":""}`,onClick:()=>setForm({...form,nat:v})},l)
             )
           ),
@@ -1080,7 +1129,7 @@ function App(){
     ),
     e("div",{className:"tabs"},
       [["browse",`我的選擇 (${myFaves.length}♥)`],
-       ["overlap",`共同支持${overlapMembers.length?` (${overlapMembers.length})`:""}`],
+       ["overlap",`共同支持${overlapFiltered.length?` (${overlapFiltered.length})`:""}`],
        ["members",`房間成員 (${memberNames.length})`]
       ].map(([k,l])=>e("button",{key:k,className:`tab${tab===k?" on":""}`,onClick:()=>setTab(k)},l))
     ),
@@ -1101,6 +1150,7 @@ function App(){
           e("option",{value:"all"},"全部"),
           e("option",{value:"K"},"🇰🇷 韓"),
           e("option",{value:"J"},"🇯🇵 日"),
+          e("option",{value:"H"},"🇭🇰 港澳"),
           e("option",{value:"T"},"🇹🇼 本土")
         ),
         e("div",{className:`tog${multi?" on":""}`,onClick:()=>setMulti(!multi)},"雙棲以上"),
@@ -1140,12 +1190,84 @@ function App(){
 
     /* OVERLAP */
     tab==="overlap"&&e("div",null,
-      overlapMembers.length===0
-        ?e("div",{className:"empty"},"等朋友也進入房間選好後，這裡會顯示大家共同支持的成員！")
+      overlapFiltered.length===0
+        ?e("div",null,
+          e("div",{className:"empty"},memberNames.length<2
+            ?"等朋友也進入房間選好後，這裡會顯示大家共同支持的成員！"
+            :memberNames.filter(nm=>overlapRoomPick[nm]!==false).length===0
+              ?"請至少勾選一位要計入的房間成員（下方勾選區）。"
+              :"目前篩選下沒有結果。可切換「顯示方式」、調整聯盟／球隊／國籍，或勾選／取消勾選計入的成員。"),
+          memberNames.length>=2&&e("div",{className:"filters",style:{marginTop:10}},
+            e("select",{value:lf,onChange:ev=>{setLf(ev.target.value);setTf("all");}},
+              e("option",{value:"all"},"全部聯盟"),
+              LEAGUES.map(l=>e("option",{key:l,value:l},l==="CPBL"?"⚾ 棒球":l==="PLG"?"🏀 PLG":"🏀 TPBL"))
+            ),
+            e("select",{value:tf,onChange:ev=>setTf(ev.target.value)},
+              e("option",{value:"all"},"全部球隊"),
+              teamsByLf.map(([id,v])=>e("option",{key:id,value:id},v.n))
+            ),
+            e("select",{value:nf,onChange:ev=>setNf(ev.target.value)},
+              e("option",{value:"all"},"全部國籍"),
+              e("option",{value:"K"},"🇰🇷 韓"),
+              e("option",{value:"J"},"🇯🇵 日"),
+              e("option",{value:"H"},"🇭🇰 港澳"),
+              e("option",{value:"T"},"🇹🇼 本土")
+            ),
+            e("select",{value:overlapListMode,onChange:ev=>setOverlapListMode(ev.target.value),style:{maxWidth:260,fontSize:12,padding:"5px 8px"}},
+              e("option",{value:"everyone"},"顯示：全員都有選（交集）"),
+              e("option",{value:"anyone"},"顯示：任一人有選（聯集）")
+            )
+          ),
+          memberNames.length>=2&&e("div",{style:{marginTop:10,padding:"8px 10px",background:"#f7f7f7",borderRadius:8,fontSize:13}},
+            e("div",{style:{marginBottom:6,fontWeight:600,color:"#555"}},"計入共同支持的房間成員"),
+            e("div",{style:{display:"flex",flexWrap:"wrap",gap:"6px 14px",alignItems:"center",marginBottom:6}},
+              e("button",{type:"button",className:"btn btn-gray btn-sm",onClick:()=>{const o={};memberNames.forEach(nm=>o[nm]=!0);setOverlapRoomPick(o);}},"全選"),
+              e("button",{type:"button",className:"btn btn-gray btn-sm",onClick:()=>{const o={};memberNames.forEach(nm=>o[nm]=!1);setOverlapRoomPick(o);}},"全不選")
+            ),
+            sortedRoomNicknames.map(nm=>e("label",{key:nm,style:{display:"inline-flex",alignItems:"center",gap:4,marginRight:8,cursor:"pointer",userSelect:"none"}},
+              e("input",{type:"checkbox",checked:overlapRoomPick[nm]!==false,onChange:ev=>{
+                const on=ev.target.checked;
+                setOverlapRoomPick(p=>({...p,[nm]:on}));
+              }}),
+              nm+(nm===myName?"（我）":"")))
+        ))
         :e("div",null,
-          e("div",{className:"section-title"},"共同支持",e("span",null,`${overlapMembers.length} 位`)),
+          e("div",{className:"filters",style:{marginBottom:10}},
+            e("select",{value:lf,onChange:ev=>{setLf(ev.target.value);setTf("all");}},
+              e("option",{value:"all"},"全部聯盟"),
+              LEAGUES.map(l=>e("option",{key:l,value:l},l==="CPBL"?"⚾ 棒球":l==="PLG"?"🏀 PLG":"🏀 TPBL"))
+            ),
+            e("select",{value:tf,onChange:ev=>setTf(ev.target.value)},
+              e("option",{value:"all"},"全部球隊"),
+              teamsByLf.map(([id,v])=>e("option",{key:id,value:id},v.n))
+            ),
+            e("select",{value:nf,onChange:ev=>setNf(ev.target.value)},
+              e("option",{value:"all"},"全部國籍"),
+              e("option",{value:"K"},"🇰🇷 韓"),
+              e("option",{value:"J"},"🇯🇵 日"),
+              e("option",{value:"H"},"🇭🇰 港澳"),
+              e("option",{value:"T"},"🇹🇼 本土")
+            ),
+            e("select",{value:overlapListMode,onChange:ev=>setOverlapListMode(ev.target.value),style:{maxWidth:260,fontSize:12,padding:"5px 8px"}},
+              e("option",{value:"everyone"},"顯示：全員都有選（交集）"),
+              e("option",{value:"anyone"},"顯示：任一人有選（聯集）")
+            )
+          ),
+          e("div",{style:{marginBottom:12,padding:"8px 10px",background:"#f7f7f7",borderRadius:8,fontSize:13}},
+            e("div",{style:{marginBottom:6,fontWeight:600,color:"#555"}},"計入共同支持的房間成員"),
+            e("div",{style:{display:"flex",flexWrap:"wrap",gap:"6px 14px",alignItems:"center",marginBottom:6}},
+              e("button",{type:"button",className:"btn btn-gray btn-sm",onClick:()=>{const o={};memberNames.forEach(nm=>o[nm]=!0);setOverlapRoomPick(o);}},"全選"),
+              e("button",{type:"button",className:"btn btn-gray btn-sm",onClick:()=>{const o={};memberNames.forEach(nm=>o[nm]=!1);setOverlapRoomPick(o);}},"全不選")
+            ),
+            sortedRoomNicknames.map(nm=>e("label",{key:nm,style:{display:"inline-flex",alignItems:"center",gap:4,marginRight:8,cursor:"pointer",userSelect:"none"}},
+              e("input",{type:"checkbox",checked:overlapRoomPick[nm]!==false,onChange:ev=>{
+                const on=ev.target.checked;
+                setOverlapRoomPick(p=>({...p,[nm]:on}));
+              }}),
+              nm+(nm===myName?"（我）":"")))),
+          e("div",{className:"section-title"},"共同支持",e("span",null,`${overlapFiltered.length} 位`)),
           e("div",{className:"og"},
-            overlapMembers.map(({m,cnt,likers})=>
+            overlapFiltered.map(({m,cnt,likers})=>
               e("div",{key:m.id,className:"oc"},
                 e("div",{className:"oh"},
                   e("span",{className:"nat"},NF[m.nat]),
