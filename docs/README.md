@@ -20,7 +20,7 @@
 |------|----------|
 | [01-專案總覽.md](./01-專案總覽.md) | 專案目的、**GitHub／Netlify／Firebase 與單一網址同步**、檔案地圖、依賴與機密注意 |
 | [02-技術架構.md](./02-技術架構.md) | 單一 `index.html`、React 寫法、畫面階段與模組分界 |
-| [03-Firebase與資料.md](./03-Firebase與資料.md) | Realtime Database 路徑、成員資料結構、合併邏輯 |
+| [03-Firebase與資料.md](./03-Firebase與資料.md) | Realtime Database 路徑、成員資料結構、`membersFromFirebase` |
 | [04-功能模組.md](./04-功能模組.md) | 分頁功能、共同支持兩種模式、管理後台 |
 | [05-後續修改與驗證.md](./05-後續修改與驗證.md) | 常改位置、密鑰注意、`scripts/check-inline.mjs` |
 

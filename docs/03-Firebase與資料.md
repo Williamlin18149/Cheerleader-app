@@ -6,7 +6,7 @@
 
 ## Firebase 產品
 
-- **Realtime Database（RTDB）**：房間即時狀態、可選的全域啦啦隊名單。
+- **Realtime Database（RTDB）**：房間即時狀態、**啦啦隊主名單**（`config/members`）。
 - **本專案未使用** Firebase Authentication（登入房間仍為自訂暱稱 + 房間碼；管理員為 HTML 內密碼）。
 
 ## 內嵌設定
@@ -31,15 +31,14 @@
 
 寫入個人選擇時會 `update` 該暱稱節點下的 `faves` 與 `ts`。
 
-### 全域啦啦隊名單（可選）
+### 全域啦啦隊名單（唯一真相來源）
 
-- `config/members` — **陣列**：每位啦啦隊員一筆 object（見下節 schema）
+- `config/members` — **陣列**：每位啦啦隊員一筆 object
 
-啟動時 `once("value")` 讀取；若存在且為非空陣列，則與程式內 `DEFAULT_MEMBERS` 做 **合併**（非整包覆蓋）。
+啟動時 `once("value")` 讀取；結果經 **`membersFromFirebase`** 正規化（過濾無效項、`id` 轉數字、`sortMembersByTeam` 排序）後寫入 React `members`。
 
-### 管理後台
-
-- 可能讀取 `rooms` 根節點列出多房；若規則不允許，程式會退回只讀目前房間的 `rooms/{roomCode}/members`（見程式內註解與 `adminRoomsNotice`）。
+- **無**程式內建名單與雲端「合併補齊」：雲端沒有或不是陣列時，`members` 為 **`[]`**。
+- **大調整名單**：請在 Firebase Console **匯出 JSON**、編輯後再 **匯入／覆寫** `config/members`，或於管理後台逐筆編輯。
 
 ## 啦啦隊員資料結構（概念 schema）
 
@@ -54,21 +53,17 @@
 | `r` | string | 身份／角色（隊長、外援、正式…，對應 `RS` 樣式） |
 | `note` | string? | 選填備註 |
 
-球隊與聯盟對照在 `TEAMS`、`TEAM_BY_LEAGUE` 常數表。
+球隊與聯盟對照在 `TEAMS`、`TEAM_BY_LEAGUE` 常數表（仍內建在程式，僅作為 **UI 與篩選對照表**，不是啦啦隊員名單本體）。
 
-## `mergeMembersWithDefaults(custom, defs)` 行為（重要）
+## `membersFromFirebase(val)` 行為
 
-目的：**雲端舊資料不會把程式新版本新增的預設成員「弄丟」**。
-
-- 以 `defs`（`DEFAULT_MEMBERS`）為骨架，依 **id** 合併 `custom` 中同 id 的覆寫欄位。
-- `custom` 裡有、但 `defs` 沒有的 id，會 **append** 到結果尾端（自訂新增成員）。
-
-因此：**新增預設成員時只要在 `DEFAULT_MEMBERS` 加一筆新 id**；使用者雲端若尚未含該 id，下次載入合併後仍會出現。
+- `val` 非陣列或空陣列 → 回傳 `[]`。
+- 否則過濾非物件、無效 `id`，其餘 `{...c, id}` 再經 `sortMembersByTeam` 排序。
 
 ## `cheerleader-app-default-rtdb-export.json`
 
 - 多為 Firebase 匯出的 JSON 樹，結構上常含 `config`、`rooms` 等。
-- 可用於本機對照、還原測試；**與執行中 App 是否一致**取決於你是否將其匯入同一專案 RTDB。
+- 可用於本機對照、還原測試；與執行中 App 是否一致取決於你是否將其匯入同一專案 RTDB。
 
 ## Security Rules（本文件不寫死規則內文）
 
